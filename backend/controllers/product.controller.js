@@ -97,11 +97,8 @@ export const deleteProduct = async (req, res) => {
                 await cloudinary.uploader.destroy(`products/${publicId}`);
                 console.log("Image deleted from Cloudinary");
             } catch (error) {
-                console.error("Error deleting image from Cloudinary:", error.message);
-                return res.status(500).json({
-                    success: false,
-                    message: "Error deleting image from Cloudinary",
-                });
+                console.error("Error deleting image from Cloudinary:", error);
+                
             }
         }
 
@@ -114,7 +111,74 @@ export const deleteProduct = async (req, res) => {
         console.error("Error in deleteProduct controller:", error.message);
         res.status(500).json({
             success: false,
-            message: "Internal server error: " + error.message,
+            message: "Internal server error: " , error: error.message,
         });
     }
 }
+
+export const getRecommendedProducts = async (req, res) => {
+
+  try {
+    const products = await Product.aggregate([
+      { $sample: { size: 3 } },
+      { $project: { _id: 1, name: 1, description: 1, image: 1, price: 1 } 
+      } // Project only necessary fields
+    ])
+
+    res.json(products)
+  } catch (error) {
+    console.error("Error in getRecommendedProducts controller:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error: " + error.message,
+    });
+  }
+}
+
+export const getProductsByCategory = async (req, res) => {
+const { category } = req.params;
+  try {
+    const products = await Product.find({ category });
+    res.json(products);
+} catch (error) {
+  console.error("Error in getProductsByCategory controller:", error.message);
+  res.status(500).json({
+    success: false,
+    message: "Internal server error: " + error.message,
+  });
+}
+}
+
+export const toggleFeaturedProduct = async (req, res) => {
+try {
+  const product = await Product.findById(req.params.id);
+  if(product) {
+    product.isFeatured = !product.isFeatured; // Toggle the isFeatured status
+    const updatedProduct = await product.save(); // Save the updated product
+    await updateFeaturedProductsCache(); // Update the cache after toggling
+    res.json(updatedProduct);
+  } else {
+    res.status(404).json({
+      success: false,
+      message: "Product not found",
+    });
+  }
+  } catch (error) {
+  console.error("Error in toggleFeaturedProduct controller:", error.message);
+  res.status(500).json({
+    success: false,
+    message: "Internal server error: " + error.message,
+  });
+  }
+}
+
+async function updateFeaturedProductsCache() {
+   try {
+    // The lean() method is used to return plain JavaScript objects instead of Mongoose documents this improves performance
+     const featuredProducts = await Product.find({ isFeatured: true }).lean();
+     await redis.set("featuredProducts", JSON.stringify(featuredProducts));
+   } catch (error) {
+     console.error("Error updating featured products cache:", error.message);
+   }
+
+  }
